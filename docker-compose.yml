@@ -1,0 +1,216 @@
+networks:
+  booking-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+
+services:
+  # Nginx Reverse Proxy - Development
+  nginx-dev:
+    image: nginx:alpine
+    container_name: bm-nginx-dev
+    ports:
+      - '80:80'
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - booking-service
+      - job-service
+    networks:
+      - booking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles: [""]
+
+  # Nginx Reverse Proxy - Production  
+  nginx-prod:
+    image: nginx:alpine
+    container_name: bm-nginx-prod
+    ports:
+      - '80:80'
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - booking-service-prod
+      - job-service-prod
+    networks:
+      - booking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles: ["prod"]
+
+  # PostgreSQL Database (development only)
+  postgres:
+    image: postgres:15-alpine
+    container_name: bm-postgres-db
+    environment:
+      POSTGRES_DB: booking_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_INITDB_ARGS: '--encoding=UTF-8'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - booking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles: [""]
+
+  # Redis Cache (development only)
+  redis:
+    image: redis:7-alpine
+    container_name: bm-redis-db
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - booking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    profiles: [""]
+
+  # Booking Microservice - Development
+  booking-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: booking-service
+    command: ['npm', 'run', 'start:api']
+    ports:
+      - '5000:5000'
+    volumes:
+      # Hot reload for development
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/booking_db
+      - POSTGRES_SYNC=true
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=your-super-secret-jwt-key-for-development
+      - JWT_EXPIRES_IN=1d
+      - REFRESH_JWT_SECRET=your-super-secret-refresh-jwt-key-for-development
+      - REFRESH_JWT_EXPIRES_IN=7d
+      - WS_CORS_ORIGIN=http://localhost:3000
+      - CORS_ENABLED=true
+      - SWAGGER_ENABLED=true
+    networks:
+      - booking-network
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:5000/']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles: [""]
+
+  # Job Service - Development
+  job-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: job-service
+    command: ['npm', 'run', 'start:job']
+    ports:
+      - '5001:5001'
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - JOB_PORT=5001
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/booking_db
+      - POSTGRES_SYNC=true 
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=your-super-secret-jwt-key-for-development
+      - JWT_EXPIRES_IN=1d
+      - REFRESH_JWT_SECRET=your-super-secret-refresh-jwt-key-for-development
+      - REFRESH_JWT_EXPIRES_IN=7d
+    networks:
+      - booking-network
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:5001/job/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles: [""]
+
+  # Booking Service - Production
+  booking-service-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: booking-service-prod
+    command: ['node', 'dist/apps/booking-microservice/main']
+    ports:
+      - '5000:5000'
+    env_file:
+      - .env
+    networks:
+      - booking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:5000/']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles: ["prod"]
+
+  # Job Service - Production
+  job-service-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: job-service-prod
+    command: ['node', 'dist/apps/job/main']
+    ports:
+      - '5001:5001'
+    env_file:
+      - .env
+    networks:
+      - booking-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:5001/job/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles: ["prod"]
