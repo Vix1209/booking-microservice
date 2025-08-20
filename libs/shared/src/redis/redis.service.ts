@@ -141,7 +141,7 @@ export class RedisService {
       data,
       timestamp: new Date().toISOString(),
     };
-    await this.publish('booking_event', payload);
+    await this.publish(event, payload);
   }
 
   async setJson(

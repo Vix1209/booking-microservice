@@ -77,6 +77,9 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    # Expose Redis to host so external (non-container) tools like the Python subscriber can connect
+    ports:
+      - "6379:6379"
     networks:
       - booking-network
     restart: unless-stopped
