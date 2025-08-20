@@ -10,7 +10,7 @@ import bull from 'bull';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
 import { Booking, BookingStatus } from './entities/booking.entity';
-import { WebSocketService } from '@shared/shared';
+import { RedisService, WebSocketService } from '@shared/shared';
 import { BookingReminderJobData, JobType } from '@shared/shared';
 import { paginate } from 'utils/pagination.utils';
 
@@ -22,6 +22,7 @@ export class BookingService {
     @InjectQueue('booking-jobs')
     private readonly bookingQueue: bull.Queue<BookingReminderJobData>,
     private readonly webSocketService: WebSocketService,
+    private readonly redisService: RedisService,
   ) {}
 
   async create(
@@ -95,6 +96,18 @@ export class BookingService {
       endTime: savedBooking.endTime,
       userId: savedBooking.userId,
       status: savedBooking.status,
+    });
+
+    await this.redisService.publishBookingEvent('booking.created', {
+      id: savedBooking.id,
+      title: savedBooking.title,
+      description: savedBooking.description,
+      startTime: savedBooking.startTime,
+      endTime: savedBooking.endTime,
+      userId: savedBooking.userId,
+      status: savedBooking.status,
+      location: savedBooking.location,
+      notes: savedBooking.notes,
     });
 
     return savedBooking;

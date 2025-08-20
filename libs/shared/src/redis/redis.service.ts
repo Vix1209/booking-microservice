@@ -123,6 +123,27 @@ export class RedisService {
     }
   }
 
+  async publish(channel: string, data: any): Promise<number> {
+    try {
+      const payload = typeof data === 'string' ? data : JSON.stringify(data);
+      const result = await this.client.publish(channel, payload);
+      this.logger.log(`Published to channel ${channel}: ${payload}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Error publishing to channel ${channel}:`, error);
+      throw error;
+    }
+  }
+
+  async publishBookingEvent(event: string, data: any): Promise<void> {
+    const payload = {
+      event,
+      data,
+      timestamp: new Date().toISOString(),
+    };
+    await this.publish('booking_event', payload);
+  }
+
   async setJson(
     key: string,
     value: any,
